@@ -1,0 +1,79 @@
+version: '3.8'
+
+services:
+  chroma:
+    image: chromadb/chroma:0.5.20
+    container_name: azeru-chroma
+    ports:
+      - "8000:8000"
+    volumes:
+      - chroma-data:/chroma/data
+    environment:
+      - PERSIST_DIRECTORY=/chroma/data
+    restart: unless-stopped
+    #healthcheck:
+   #   test: ["CMD-SHELL", "cat < /dev/null > /dev/tcp/localhost/8000"]
+    #  interval: 15s
+     # timeout: 15s
+      #retries: 10
+      #start_period: 60s  # Ollama needs more time on first start
+
+  ollama:
+    image: ollama/ollama:latest
+    container_name: azeru-ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama-data:/root/.ollama
+    environment:
+      - OLLAMA_HOST=0.0.0.0:11434
+    restart: unless-stopped
+   # healthcheck:
+    #  test: ["CMD", "curl", "-f", "http://localhost:11434/api/tags"]
+     # interval: 15s
+      #timeout: 15s
+      #retries: 10
+      #start_period: 60s # Allow extra time for Ollama to start up
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: azeru-backend
+    ports:
+      - "8080:8080"
+    volumes:
+      # Persist SQLite database on host
+      - ./data:/app/data
+    command: >
+     sh -c "echo 'Waiting for ChromaDB to be ready...' && 
+           sleep 30 && 
+           echo 'Starting server...' && 
+           ./server"
+    environment:
+      - GIN_MODE=release
+      - GROQ_API_KEY=${GROQ_API_KEY:-}
+      - GROQ_MODEL=${GROQ_MODEL:-meta-llama/llama-4-scout-17b-16e-instruct}
+      - OLLAMA_URL=http://ollama:11434
+      - CHROMA_URL=http://chroma:8000
+ 
+  frontend:
+    build:
+      context: ./azeru
+      dockerfile: Dockerfile
+    container_name: azeru-frontend
+    ports:
+      - "3000:80"
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:8080
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+volumes:
+  chroma-data:
+    driver: local
+  ollama-data:
+    driver: local
+  azeru-data:
+    driver: local
